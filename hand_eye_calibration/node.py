@@ -9,6 +9,7 @@ from rclpy.node import Node
 from rclpy.time import Duration
 from geometry_msgs.msg import TransformStamped, Transform
 from scipy.spatial.transform import Rotation as Rot
+import numpy as np
 from std_srvs.srv import Trigger
 from tf2_ros import TransformException
 from tf2_ros.buffer import Buffer
@@ -53,6 +54,26 @@ def tf_to_string(tf_stamped_message: TransformStamped):
     out = str(tf_stamped_message.child_frame_id) + " -> " + str(tf_stamped_message.header.frame_id) + ":"
     out += "\n\t" + tf_list_to_string(tfl)
     return str(out)
+
+
+def inverse_transform(transform):
+    """
+    Compute the inverse of a transform given a single array with translation and quaternion.
+
+    Parameters:
+    - transform: Array-like of length 7 [x, y, z, qx, qy, qz, qw]
+
+    Returns:
+    - inv_transform: Array of length 7 [x', y', z', qx', qy', qz', qw']
+    """
+    translation = np.array(transform[:3])
+    quaternion = np.array(transform[3:])
+    rotation = Rot.from_quat(quaternion)  # Quaternion in (x, y, z, w)
+    inv_rotation = rotation.inv()
+    inv_translation = -inv_rotation.apply(translation)
+    inv_quaternion = inv_rotation.as_quat()  # Returns in (x, y, z, w)
+    inv_transform = np.concatenate([inv_translation, inv_quaternion])
+    return inv_transform
 
 
 class DataCollector(Node):
@@ -111,6 +132,7 @@ class DataCollector(Node):
         except TransformException as ex:
             self.get_logger().error("Could not get transforms")
             self.get_logger().error(str(ex))
+            exit(1)
 
         self.get_logger().info("robot: " + tf_to_string(robot))
         self.get_logger().info("tracking: " + tf_to_string(tracking))
@@ -119,13 +141,16 @@ class DataCollector(Node):
         self.tracking_samples.append(get_transform(tracking.transform))
 
         cal = self.get_calibration()
+        inv_cal = inverse_transform(cal)
         if cal is None:
             msg = "Not enough samples yet..."
         else:
             self.get_logger().info("Current estimate of: " + self.tracking_base_frame + " -> " + self.robot_base_frame)
             self.get_logger().info("transform: " + tf_list_to_string(cal))
-            self.get_logger().info("as euler: " + urdf_list_to_string(tf_to_urdf_tf(cal)))
-            msg = "Current estimate: " + tf_list_to_string(cal) + " as euler: " + urdf_list_to_string(tf_to_urdf_tf(cal))
+            self.get_logger().info("Current estimate of: " + self.robot_base_frame + " -> " + self.tracking_base_frame)
+            self.get_logger().info("transform: " + tf_list_to_string(inv_cal))
+            # self.get_logger().info("as euler: " + urdf_list_to_string(tf_to_urdf_tf(cal)))
+            # msg = "Current estimate: " + tf_list_to_string(cal) + " as euler: " + urdf_list_to_string(tf_to_urdf_tf(cal))
         resp.success = True
         resp.message = msg
         return resp
