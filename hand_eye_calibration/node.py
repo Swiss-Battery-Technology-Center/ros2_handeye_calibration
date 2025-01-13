@@ -141,10 +141,10 @@ class DataCollector(Node):
         self.tracking_samples.append(get_transform(tracking.transform))
 
         cal = self.get_calibration()
-        inv_cal = inverse_transform(cal)
         if cal is None:
             msg = "Not enough samples yet..."
         else:
+            inv_cal = inverse_transform(cal)
             self.get_logger().info("Current estimate of: " + self.tracking_base_frame + " -> " + self.robot_base_frame)
             self.get_logger().info("transform: " + tf_list_to_string(cal))
             self.get_logger().info("Current estimate of: " + self.robot_base_frame + " -> " + self.tracking_base_frame)
