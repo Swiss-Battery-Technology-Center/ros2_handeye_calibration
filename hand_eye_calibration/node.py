@@ -142,18 +142,22 @@ class DataCollector(Node):
 
         cal = self.get_calibration()
         if cal is None:
-            msg = "Not enough samples yet..."
+            msg = "Measurement taken. Not enough samples yet..."
         else:
             inv_cal = inverse_transform(cal)
-            self.get_logger().info("Current estimate of: " + self.tracking_base_frame + " -> " + self.robot_base_frame)
-            self.get_logger().info("transform: " + tf_list_to_string(cal))
-            self.get_logger().info("Current estimate of: " + self.robot_base_frame + " -> " + self.tracking_base_frame)
-            self.get_logger().info("transform: " + tf_list_to_string(inv_cal))
-            # self.get_logger().info("as euler: " + urdf_list_to_string(tf_to_urdf_tf(cal)))
-            # msg = "Current estimate: " + tf_list_to_string(cal) + " as euler: " + urdf_list_to_string(tf_to_urdf_tf(cal))
+            self.get_logger().info(
+                "Current estimate of " + self.tracking_base_frame + " -> " + 
+                self.robot_base_frame + ": " + tf_list_to_string(cal))
+            self.get_logger().info(
+                "Current estimate of " + self.robot_base_frame + " -> " + 
+                self.tracking_base_frame + ": " + tf_list_to_string(inv_cal))
+            msg = "Current estimate: " + \
+                self.tracking_base_frame + " -> " + self.robot_base_frame + ": " + tf_list_to_string(cal) + ", " + \
+                self.robot_base_frame + " -> " + self.tracking_base_frame + ": " + tf_list_to_string(inv_cal)
         resp.success = True
         resp.message = msg
         return resp
+
 
     def get_calibration(self):
         if len(self.robot_samples) < 4:
@@ -162,7 +166,7 @@ class DataCollector(Node):
         else:
             self.get_logger().info("Estimating ...")
             cal = CalibrationBackend.compute_calibration(samples_robot=self.robot_samples, 
-                                                         samples_tracking=self.tracking_samples)
+                                                            samples_tracking=self.tracking_samples)
             return cal
 
 
