@@ -146,14 +146,14 @@ class DataCollector(Node):
         else:
             inv_cal = inverse_transform(cal)
             self.get_logger().info(
-                "Current estimate of " + self.tracking_base_frame + " -> " + 
-                self.robot_base_frame + ": " + tf_list_to_string(cal))
-            self.get_logger().info(
                 "Current estimate of " + self.robot_base_frame + " -> " + 
-                self.tracking_base_frame + ": " + tf_list_to_string(inv_cal))
+                self.tracking_base_frame + ": " + tf_list_to_string(cal))
+            self.get_logger().info(
+                "Current estimate of " + self.tracking_base_frame + " -> " + 
+                self.robot_base_frame + ": " + tf_list_to_string(inv_cal))
             msg = "Current estimate: " + \
-                self.tracking_base_frame + " -> " + self.robot_base_frame + ": " + tf_list_to_string(cal) + ", " + \
-                self.robot_base_frame + " -> " + self.tracking_base_frame + ": " + tf_list_to_string(inv_cal)
+                self.robot_base_frame + " -> " + self.tracking_base_frame + ": " + tf_list_to_string(cal) + ", " + \
+                self.tracking_base_frame + " -> " + self.robot_base_frame + ": " + tf_list_to_string(inv_cal)
         resp.success = True
         resp.message = msg
         return resp
