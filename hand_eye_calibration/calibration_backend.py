@@ -1,7 +1,16 @@
 import cv2
 import numpy as np
-
 from scipy.spatial.transform import Rotation as Rot
+from typing import List, Tuple
+from geometry_msgs.msg import Transform
+
+from .utilities import tf_to_pos_quat, pos_quat_to_tf, invert_rot_pos
+
+"""
+Check the OpenCV documentation for the Hand-Eye calibration:
+https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html#gaebfc1c9f7434196a374c382abf43439b
+"""
+
 
 class CalibrationBackend:
     MIN_SAMPLES = 4
@@ -14,57 +23,89 @@ class CalibrationBackend:
         'Daniilidis': cv2.CALIB_HAND_EYE_DANIILIDIS,
     }
 
-    @staticmethod
-    def list_to_opencv(transform: list()):
-        """
-        transform = [tx, ty, tz, qx, qy, qz, qw]
-        """
-        t = transform
-        tr = np.array([t[0], t[1], t[2]])
-        rot = Rot.from_quat([t[3], t[4], t[5], t[6]]).as_matrix()
-        return rot, tr
 
     @staticmethod
-    def get_opencv_samples(samples_robot, samples_tracking):
-        """
-        Returns the sample list as a rotation matrix and a translation vector.
-        :rtype: (np.array, np.array)
-        """
-        hand_base_rot = []
-        hand_base_tr = []
-        marker_camera_rot = []
-        marker_camera_tr = []
+    def prepare_samples(
+        robot_base_to_effector_samples: List[Transform], 
+        camera_to_marker_samples: List[Transform]
+    ) -> Tuple[List[np.array], List[np.array], List[np.array], List[np.array]]:
 
-        for robot_tf, tracking_tf in zip(samples_robot, samples_tracking):
-            (mcr, mct) = CalibrationBackend.list_to_opencv(tracking_tf)
-            marker_camera_rot.append(mcr)
-            marker_camera_tr.append(mct)
+        if len(robot_base_to_effector_samples) < CalibrationBackend.MIN_SAMPLES:
+            raise ValueError(f"Not enough samples. Minimum required is {CalibrationBackend.MIN_SAMPLES}.")
+        if len(robot_base_to_effector_samples) != len(camera_to_marker_samples):
+            raise ValueError("Robot and tracking samples must have the same length.")
 
-            (hbr, hbt) = CalibrationBackend.list_to_opencv(robot_tf)
-            hand_base_rot.append(hbr)
-            hand_base_tr.append(hbt)
+        # Prepare data
+        base_to_effector_rot = []
+        base_to_effector_pos = []
+        camera_to_marker_rot = []
+        camera_to_marker_pos = []
+        
+        for robot_base_to_effector in robot_base_to_effector_samples:
+            pos, quat = tf_to_pos_quat(robot_base_to_effector)
+            base_to_effector_pos.append(np.array(pos))
+            base_to_effector_rot.append(Rot.from_quat(quat).as_matrix())
+            
+        for camera_to_marker in camera_to_marker_samples:
+            pos, quat = tf_to_pos_quat(camera_to_marker)
+            camera_to_marker_pos.append(np.array(pos))
+            camera_to_marker_rot.append(Rot.from_quat(quat).as_matrix())
+            
+        return base_to_effector_rot, base_to_effector_pos, camera_to_marker_rot, camera_to_marker_pos
 
-        return (hand_base_rot, hand_base_tr), (marker_camera_rot, marker_camera_tr)
 
     @staticmethod
-    def compute_calibration(# handeye_parameters, 
-                            samples_robot, 
-                            samples_tracking,
-                            algorithm=None):
-        """
-        Computes the calibration through the OpenCV library and returns it.
-        :rtype: easy_handeye.handeye_calibration.HandeyeCalibration
-        """
-        if algorithm is None: algorithm = 'Tsai-Lenz'
-        # Update data
-        opencv_samples = CalibrationBackend.get_opencv_samples(samples_robot=samples_robot, 
-                                                               samples_tracking=samples_tracking)
-        (hand_world_rot, hand_world_tr), (marker_camera_rot, marker_camera_tr) = opencv_samples
-        method = CalibrationBackend.AVAILABLE_ALGORITHMS[algorithm]
+    def calibrate_eye_to_hand(
+        robot_base_to_effector_samples: List[Transform],
+        camera_to_marker_samples: List[Transform], 
+        algorithm: str='Tsai-Lenz'
+    ) -> Transform:
 
-        hand_camera_rot, hand_camera_tr = cv2.calibrateHandEye(hand_world_rot, hand_world_tr, marker_camera_rot,
-                                                               marker_camera_tr, method=method)
+        base_to_effector_rot, base_to_effector_pos, camera_to_marker_rot, camera_to_marker_pos = \
+            CalibrationBackend.prepare_samples(
+                robot_base_to_effector_samples, 
+                camera_to_marker_samples
+            )
+            
+        # Inverse the transforms
+        effector_to_base_rot, effector_to_base_pos = invert_rot_pos(base_to_effector_rot, base_to_effector_pos)
+        
+        # Calibrate
+        effector_to_camera_rot, effector_to_camera_tr = cv2.calibrateHandEye(
+            effector_to_base_rot, 
+            effector_to_base_pos, 
+            camera_to_marker_rot,
+            camera_to_marker_pos,
+            method=CalibrationBackend.AVAILABLE_ALGORITHMS[algorithm]
+        )
+        
+        effector_to_camera_quat = Rot.from_matrix(effector_to_camera_rot).as_quat()
+        effector_to_camera = pos_quat_to_tf(effector_to_camera_tr, effector_to_camera_quat)
+        return effector_to_camera
 
-        (hcqx, hcqy, hcqz, hcqw) = [float(i) for i in Rot.from_matrix(hand_camera_rot).as_quat()]
-        (hctx, hcty, hctz) = [float(i) for i in hand_camera_tr]
-        return [hctx, hcty, hctz, hcqx, hcqy, hcqz, hcqw]
+    
+    @staticmethod
+    def calibrate_eye_in_hand(
+        robot_base_to_effector_samples: List[Transform],
+        camera_to_marker_samples: List[Transform], 
+        algorithm: str='Tsai-Lenz'
+    ) -> Transform:
+    
+        base_to_effector_rot, base_to_effector_pos, camera_to_marker_rot, camera_to_marker_pos = \
+            CalibrationBackend.prepare_samples(
+                robot_base_to_effector_samples, 
+                camera_to_marker_samples
+            )
+                    
+        robot_base_to_camera_rot, robot_base_to_camera_tr = cv2.calibrateHandEye(
+            base_to_effector_rot,
+            base_to_effector_pos, 
+            camera_to_marker_rot,
+            camera_to_marker_pos,
+            method=CalibrationBackend.AVAILABLE_ALGORITHMS[algorithm]
+        )
+    
+        robot_base_to_camera_quat = Rot.from_matrix(robot_base_to_camera_rot).as_quat()
+        robot_base_to_camera = pos_quat_to_tf(robot_base_to_camera_tr, robot_base_to_camera_quat)
+        return robot_base_to_camera       
+        
