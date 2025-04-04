@@ -55,7 +55,7 @@ class CalibrationBackend:
 
 
     @staticmethod
-    def calibrate_eye_to_hand(
+    def calibrate_eye_on_base(
         robot_base_to_effector_samples: List[Transform],
         camera_to_marker_samples: List[Transform], 
         algorithm: str='Tsai-Lenz'
@@ -67,11 +67,11 @@ class CalibrationBackend:
                 camera_to_marker_samples
             )
             
-        # Inverse the transforms
+        # Inverse for eye-on-base
         effector_to_base_rot, effector_to_base_pos = invert_rot_pos(base_to_effector_rot, base_to_effector_pos)
         
         # Calibrate
-        effector_to_camera_rot, effector_to_camera_tr = cv2.calibrateHandEye(
+        robot_base_to_camera_rot, robot_base_to_camera_tr = cv2.calibrateHandEye(
             effector_to_base_rot, 
             effector_to_base_pos, 
             camera_to_marker_rot,
@@ -79,9 +79,12 @@ class CalibrationBackend:
             method=CalibrationBackend.AVAILABLE_ALGORITHMS[algorithm]
         )
         
-        effector_to_camera_quat = Rot.from_matrix(effector_to_camera_rot).as_quat()
-        effector_to_camera = pos_quat_to_tf(effector_to_camera_tr, effector_to_camera_quat)
-        return effector_to_camera
+        robot_base_to_camera_rot = np.array(robot_base_to_camera_rot).reshape(3, 3)
+        robot_base_to_camera_pos = np.array(robot_base_to_camera_tr).reshape(3)
+        robot_base_to_camera_quat = Rot.from_matrix(robot_base_to_camera_rot).as_quat()
+        robot_base_to_camera = pos_quat_to_tf(robot_base_to_camera_pos, robot_base_to_camera_quat)
+
+        return robot_base_to_camera     
 
     
     @staticmethod
@@ -97,15 +100,19 @@ class CalibrationBackend:
                 camera_to_marker_samples
             )
                     
-        robot_base_to_camera_rot, robot_base_to_camera_tr = cv2.calibrateHandEye(
+        effector_to_camera_rot, effector_to_camera_tr= cv2.calibrateHandEye(
             base_to_effector_rot,
             base_to_effector_pos, 
             camera_to_marker_rot,
             camera_to_marker_pos,
             method=CalibrationBackend.AVAILABLE_ALGORITHMS[algorithm]
         )
-    
-        robot_base_to_camera_quat = Rot.from_matrix(robot_base_to_camera_rot).as_quat()
-        robot_base_to_camera = pos_quat_to_tf(robot_base_to_camera_tr, robot_base_to_camera_quat)
-        return robot_base_to_camera       
+
+        effector_to_camera_rot = np.array(effector_to_camera_rot).reshape(3, 3)
+        effector_to_camera_pos = np.array(effector_to_camera_tr).reshape(3)
+        effector_to_camera_quat = Rot.from_matrix(effector_to_camera_rot).as_quat()
+        effector_to_camera = pos_quat_to_tf(effector_to_camera_pos, effector_to_camera_quat)
+
+        return effector_to_camera
+  
         

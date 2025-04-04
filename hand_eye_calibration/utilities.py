@@ -24,6 +24,8 @@ def pos_quat_to_tf(pos: Sequence[float], quat: Sequence[float]) -> Transform:
     if isinstance(quat, np.ndarray):
         quat = quat.tolist()
 
+    print(f"pos: {pos}, quat: {quat}")
+
     tf = Transform()
     tf.translation.x = pos[0]
     tf.translation.y = pos[1]

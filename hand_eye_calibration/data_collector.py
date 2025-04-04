@@ -20,7 +20,7 @@ from .calibration_backend import CalibrationBackend
 from .utilities import tf_to_string, inverse_tf
 
 class CalibrationType(enum.Enum):
-    EYE_TO_HAND = enum.auto()
+    EYE_ON_BASE = enum.auto()
     EYE_IN_HAND = enum.auto()
 
 
@@ -45,7 +45,7 @@ class DataCollector(Node):
         if self.calibration_type == "eye-in-hand":
             self.calibration_type = CalibrationType.EYE_IN_HAND
         elif self.calibration_type == "eye-on-base":
-            self.calibration_type = CalibrationType.EYE_TO_HAND
+            self.calibration_type = CalibrationType.EYE_ON_BASE
         else:
             self.get_logger().error(f"Unknown calibration type: {self.calibration_type}")
             exit(1) 
@@ -72,7 +72,9 @@ class DataCollector(Node):
         self.tracking_base_to_marker_samples.append(tracking_base_to_marker)
         cal = self.calibrate()
         response.success = True
-        response.message = self.generate_response_message(cal)
+        msg = self.generate_response_message(cal)
+        response.message = msg
+        self.get_logger().info(response.message)
         if cal is not None:
             self.publish_static_transform(cal)
         return response
@@ -108,8 +110,8 @@ class DataCollector(Node):
                 cal = CalibrationBackend.calibrate_eye_in_hand(
                     self.robot_base_to_effector_samples, 
                     self.tracking_base_to_marker_samples)
-            elif self.calibration_type == CalibrationType.EYE_TO_HAND:
-                cal = CalibrationBackend.calibrate_eye_to_hand(
+            elif self.calibration_type == CalibrationType.EYE_ON_BASE:
+                cal = CalibrationBackend.calibrate_eye_on_base(
                     self.robot_base_to_effector_samples, 
                     self.tracking_base_to_marker_samples)
             return cal
@@ -125,7 +127,7 @@ class DataCollector(Node):
                 f"Estimated transformation from robot effector ({self.robot_effector_frame}) "
                 f"to tracking base ({self.tracking_base_frame}): {tf_to_string(cal)}\n"
             )
-        elif self.calibration_type == CalibrationType.EYE_TO_HAND:
+        elif self.calibration_type == CalibrationType.EYE_ON_BASE:
             msg = (
                 "Eye-to-Hand Calibration:\n"
                 f"Estimated transformation from robot base ({self.robot_base_frame}) "
@@ -140,7 +142,7 @@ class DataCollector(Node):
         if self.calibration_type == CalibrationType.EYE_IN_HAND:
             static_transform.header.frame_id = self.robot_effector_frame
             static_transform.child_frame_id = self.tracking_base_frame
-        elif self.calibration_type == CalibrationType.EYE_TO_HAND:
+        elif self.calibration_type == CalibrationType.EYE_ON_BASE:
             static_transform.header.frame_id = self.robot_base_frame
             static_transform.child_frame_id = self.tracking_base_frame
         static_transform.transform = transform
