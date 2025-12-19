@@ -24,7 +24,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'hand_eye_calibration = hand_eye_calibration.data_collector:main'
+            'hand_eye_calibration = hand_eye_calibration.camera_extrinsics_calibration:main'
         ],
     },
 )

@@ -5,15 +5,13 @@ Collect poses and perform calibration
 
 import rclpy
 from rclpy.node import Node
-from rclpy.time import Duration
+from rclpy.time import Duration, Time
 from geometry_msgs.msg import TransformStamped, Transform
-from scipy.spatial.transform import Rotation as Rot
-import numpy as np
 from std_srvs.srv import Trigger
 from tf2_ros import TransformException, StaticTransformBroadcaster
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
-from typing import List, Tuple
+from typing import Tuple
 import enum
 
 from .calibration_backend import CalibrationBackend 
@@ -24,7 +22,7 @@ class CalibrationType(enum.Enum):
     EYE_IN_HAND = enum.auto()
 
 
-class DataCollector(Node):
+class CameraExtrinsicsCalibration(Node):
     
     def __init__(self):
         mname = "hand_eye_calibration"
@@ -60,9 +58,12 @@ class DataCollector(Node):
         self._listener = TransformListener(self.tf_buffer, self)
         self._static_tf_broadcaster = StaticTransformBroadcaster(self)
 
+        self.publish_identity_tracking_base()
+
         self.robot_base_to_effector_samples = list()
         self.tracking_base_to_marker_samples = list()
 
+        self.get_logger().info("Camera Extrinsics Calibration Node initialized")
 
     def capture_point_service_callback(self, request, response):
         robot_base_to_effector, tracking_base_to_marker = self.retrieve_transforms()
@@ -81,18 +82,15 @@ class DataCollector(Node):
 
 
     def retrieve_transforms(self) -> Tuple[Transform, Transform]:
-        time = self.get_clock().now() - Duration(seconds=1)
         try:                
             robot_base_to_effector = self.tf_buffer.lookup_transform(
                 self.robot_base_frame, 
-                self.robot_effector_frame, 
-                time, 
-                Duration(seconds=2))
+                self.robot_effector_frame,
+                Time())
             tracking_base_to_marker = self.tf_buffer.lookup_transform(
                 self.tracking_base_frame,
-                self.tracking_marker_frame, 
-                time,
-                Duration(seconds=2))
+                self.tracking_marker_frame,
+                Time())
         except TransformException as ex:
             self.get_logger().error("Could not get transforms")
             self.get_logger().error(str(ex))
@@ -150,9 +148,37 @@ class DataCollector(Node):
         self.get_logger().info("Static transform published")
 
 
+
+    def publish_identity_tracking_base(self):
+        st = TransformStamped()
+        st.header.stamp = self.get_clock().now().to_msg()
+
+        # For eye-on-base, tracking base should be anchored to robot base (initially identity)
+        if self.calibration_type == CalibrationType.EYE_ON_BASE:
+            st.header.frame_id = self.robot_base_frame
+            st.child_frame_id = self.tracking_base_frame
+        else:
+            # For eye-in-hand, tracking base is anchored to effector (initially identity)
+            st.header.frame_id = self.robot_effector_frame
+            st.child_frame_id = self.tracking_base_frame
+
+        st.transform.translation.x = 0.0
+        st.transform.translation.y = 0.0
+        st.transform.translation.z = 0.0
+        st.transform.rotation.x = 0.0
+        st.transform.rotation.y = 0.0
+        st.transform.rotation.z = 0.0
+        st.transform.rotation.w = 1.0
+
+        self._static_tf_broadcaster.sendTransform(st)
+        self.get_logger().info(
+            f"Published identity static TF: {st.header.frame_id} -> {st.child_frame_id}"
+        )
+
+
 def main():
     rclpy.init()
-    node = DataCollector()
+    node = CameraExtrinsicsCalibration()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

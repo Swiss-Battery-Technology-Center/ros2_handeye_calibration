@@ -68,7 +68,12 @@ class CalibrationBackend:
             )
             
         # Inverse for eye-on-base
-        effector_to_base_rot, effector_to_base_pos = invert_rot_pos(base_to_effector_rot, base_to_effector_pos)
+        effector_to_base_pos = []
+        effector_to_base_rot = []
+        for bte_rot, bte_pos in zip(base_to_effector_rot, base_to_effector_pos):
+            etb_rot, etb_pos = invert_rot_pos(bte_rot, bte_pos)
+            effector_to_base_rot.append(etb_rot)
+            effector_to_base_pos.append(etb_pos)
         
         # Calibrate
         robot_base_to_camera_rot, robot_base_to_camera_tr = cv2.calibrateHandEye(
