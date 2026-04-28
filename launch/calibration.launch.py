@@ -8,19 +8,21 @@ from launch import LaunchDescription
 def generate_launch_description():
 
     tracking_base_frame = DeclareLaunchArgument(
-        "tracking_base_frame", default_value="kinect_rgb_camera_link", description="e.g. camera frame"
+        "tracking_base_frame", default_value="camera_top", description="e.g. camera frame"
     )
-    tracking_marker_frame = DeclareLaunchArgument("tracking_marker_frame", default_value="tag_2")
-    robot_base_frame = DeclareLaunchArgument("robot_base_frame", default_value="base_link")
-    robot_effector_frame = DeclareLaunchArgument("robot_effector_frame", default_value="gripper_r_base")
+    tracking_marker_frame = DeclareLaunchArgument("tracking_marker_frame", default_value="marker_chessboard")
+    robot_base_frame = DeclareLaunchArgument("robot_base_frame", default_value="base")
+    robot_effector_frame = DeclareLaunchArgument("robot_effector_frame", default_value="fr3_hand_tcp")
     calibration_type = DeclareLaunchArgument(
         "calibration_type", default_value="eye-on-base", description="Options are eye-in-hand or eye-on-base"
     )
+    node_namespace = DeclareLaunchArgument("node_namespace", default_value="")
 
     calibration_node = Node(
         package="hand_eye_calibration",
         executable="hand_eye_calibration",
         name="hand_eye_calibration",
+        namespace=launch.substitutions.LaunchConfiguration("node_namespace"),
         output="screen",
         parameters=[
             {"tracking_base_frame": launch.substitutions.LaunchConfiguration("tracking_base_frame")},
@@ -37,6 +39,7 @@ def generate_launch_description():
     ll.append(robot_base_frame)
     ll.append(robot_effector_frame)
     ll.append(calibration_type)
+    ll.append(node_namespace)
     ll.append(calibration_node)
 
     return LaunchDescription(ll)
