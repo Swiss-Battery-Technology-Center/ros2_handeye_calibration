@@ -1,11 +1,11 @@
-import rclpy
+from collections.abc import Sequence
+
+import numpy as np
 from geometry_msgs.msg import Transform
 from scipy.spatial.transform import Rotation as Rot
-import numpy as np
-from typing import List, Tuple, Sequence
 
 
-def tf_to_pos_quat(tf_message: Transform) -> List[float]:
+def tf_to_pos_quat(tf_message: Transform) -> tuple[list[float], list[float]]:
     tr = tf_message.translation
     qt = tf_message.rotation
     pos = [tr.x, tr.y, tr.z]
@@ -15,7 +15,7 @@ def tf_to_pos_quat(tf_message: Transform) -> List[float]:
 
 def pos_quat_to_tf(pos: Sequence[float], quat: Sequence[float]) -> Transform:
     """Converts position and quaternion into a geometry_msgs/Transform message.
-    
+
     `pos` should be [tx, ty, tz], and `quat` should be [qx, qy, qz, qw].
     Frame IDs are not set in this function.
     """
@@ -40,8 +40,9 @@ def pos_quat_to_tf(pos: Sequence[float], quat: Sequence[float]) -> Transform:
 
 def tf_to_string(tf_message: Transform, child_frame_id: str = "", frame_id: str = "") -> str:
     pos, quat = tf_to_pos_quat(tf_message)
-    tf_string = "tx, ty, tz, qx, qy, qz, qw: [%.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f]" % (
-        pos[0], pos[1], pos[2], quat[0], quat[1], quat[2], quat[3]
+    tf_string = (
+        f"tx, ty, tz, qx, qy, qz, qw: [{pos[0]:.4f}, {pos[1]:.4f}, {pos[2]:.4f}, "
+        f"{quat[0]:.4f}, {quat[1]:.4f}, {quat[2]:.4f}, {quat[3]:.4f}]"
     )
     out = f"{child_frame_id} -> {frame_id}:\n\t{tf_string}"
     return out
@@ -60,7 +61,7 @@ def inverse_tf(transform: Transform) -> Transform:
     return tf
 
 
-def transform_to_R_t(pos: List[float], quat: List[float]) -> Tuple[np.ndarray, np.ndarray]:
+def transform_to_R_t(pos: list[float], quat: list[float]) -> tuple[np.ndarray, np.ndarray]:
     """
     transform = [tx, ty, tz, qx, qy, qz, qw]
     """
@@ -69,7 +70,7 @@ def transform_to_R_t(pos: List[float], quat: List[float]) -> Tuple[np.ndarray, n
     return rot, tr
 
 
-def invert_rot_pos(R: np.ndarray, t: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+def invert_rot_pos(R: np.ndarray, t: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """
     Given a rotation matrix R and a translation vector t,
     return the inverse transformation (R.T, -R.T @ t).
