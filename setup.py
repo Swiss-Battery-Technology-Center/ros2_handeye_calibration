@@ -21,7 +21,6 @@ setup(
     maintainer_email='todo@todo.todo',
     description='Minimal ROS2 hand-eye calibration package',
     license='TODO: License declaration',
-    tests_require=['pytest'],
     entry_points={
         'console_scripts': [
             'hand_eye_calibration = hand_eye_calibration.camera_extrinsics_calibration:main'
