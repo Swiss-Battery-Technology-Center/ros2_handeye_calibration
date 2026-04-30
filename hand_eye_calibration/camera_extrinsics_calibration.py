@@ -161,14 +161,25 @@ class CameraExtrinsicsCalibration(Node):
             return "Calibration result computed; no camera calibration mapping configured, skipping YAML update."
 
         transform_key, parent_frame, child_frame = mapping
-        output_path = self.resolve_calibration_file()
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path = self.resolve_calibration_file().resolve()
+        source_path = Path(
+            "/workspace/ros2/src/sbtc-ros2-cv/sbtc_cv/config/calibrated_camera_transforms.yaml"
+        ).resolve()
+
+        output_paths: list[Path] = []
+        for candidate_path in (output_path, source_path):
+            if candidate_path not in output_paths:
+                output_paths.append(candidate_path)
+
+        for path in output_paths:
+            path.parent.mkdir(parents=True, exist_ok=True)
 
         calibration_data = {}
-        if output_path.exists():
-            with output_path.open("r", encoding="utf-8") as calibration_file:
-                calibration_data = yaml.safe_load(calibration_file) or {}
-            shutil.copy2(output_path, Path(str(output_path) + ".old"))
+        for path in output_paths:
+            if path.exists():
+                with path.open("r", encoding="utf-8") as calibration_file:
+                    calibration_data = yaml.safe_load(calibration_file) or {}
+                break
 
         static_transforms = calibration_data.setdefault("static_transforms", {})
         transform_entry = static_transforms.setdefault(transform_key, {})
@@ -179,10 +190,23 @@ class CameraExtrinsicsCalibration(Node):
         transform_entry["parent_frame"] = parent_frame
         transform_entry["child_frame"] = child_frame
 
-        with output_path.open("w", encoding="utf-8") as calibration_file:
-            yaml.safe_dump(calibration_data, calibration_file, sort_keys=False)
+        backup_paths = []
+        for path in output_paths:
+            if path.exists():
+                backup_path = Path(str(path) + ".old")
+                shutil.copy2(path, backup_path)
+                backup_paths.append(str(backup_path))
 
-        return f"Updated {output_path} -> static_transforms.{transform_key} (backup: {output_path}.old)"
+            with path.open("w", encoding="utf-8") as calibration_file:
+                yaml.safe_dump(calibration_data, calibration_file, sort_keys=False)
+
+        updated_paths_str = ", ".join(str(path) for path in output_paths)
+        if backup_paths:
+            return (
+                f"Updated {updated_paths_str} -> static_transforms.{transform_key} (backup: {', '.join(backup_paths)})"
+            )
+
+        return f"Updated {updated_paths_str} -> static_transforms.{transform_key}"
 
     def generate_response_message(self, cal: Transform | None, save_message: str = "") -> str:
         if cal is None:
