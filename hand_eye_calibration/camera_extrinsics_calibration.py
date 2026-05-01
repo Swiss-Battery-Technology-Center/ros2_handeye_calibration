@@ -37,25 +37,21 @@ class CameraExtrinsicsCalibration(Node):
         mname = "hand_eye_calibration"
         super().__init__(mname)
 
-        self.declare_parameter("tracking_base_frame", "")
-        self.declare_parameter("tracking_marker_frame", "")
+        self.declare_parameter("subscribed_tf_parent_frame", "")
+        self.declare_parameter("subscribed_tf_child_frame", "")
         self.declare_parameter("robot_base_frame", "")
         self.declare_parameter("robot_effector_frame", "")
         self.declare_parameter("calibration_type", "eye-on-base")
-        self.declare_parameter("camera_calibration_file", "")
-        self.declare_parameter("calibration_transform_key", "")
-        self.declare_parameter("calibration_parent_frame", "")
-        self.declare_parameter("calibration_child_frame", "")
+        self.declare_parameter("calibrated_camera_transforms_filepath", "")
 
-        self.tracking_base_frame = str(self.get_parameter("tracking_base_frame").value)
-        self.tracking_marker_frame = str(self.get_parameter("tracking_marker_frame").value)
+        self.subscribed_tf_parent_frame = str(self.get_parameter("subscribed_tf_parent_frame").value)
+        self.subscribed_tf_child_frame = str(self.get_parameter("subscribed_tf_child_frame").value)
         self.robot_base_frame = str(self.get_parameter("robot_base_frame").value)
         self.robot_effector_frame = str(self.get_parameter("robot_effector_frame").value)
         calibration_type = str(self.get_parameter("calibration_type").value)
-        self.camera_calibration_file = str(self.get_parameter("camera_calibration_file").value)
-        self.calibration_transform_key = str(self.get_parameter("calibration_transform_key").value)
-        self.calibration_parent_frame = str(self.get_parameter("calibration_parent_frame").value)
-        self.calibration_child_frame = str(self.get_parameter("calibration_child_frame").value)
+        self.calibrated_camera_transforms_filepath = str(
+            self.get_parameter("calibrated_camera_transforms_filepath").value
+        )
 
         if calibration_type == "eye-in-hand":
             self.calibration_type = CalibrationType.EYE_IN_HAND
@@ -73,16 +69,16 @@ class CameraExtrinsicsCalibration(Node):
         self._listener = TransformListener(self.tf_buffer, self)
 
         self.robot_base_to_effector_samples = list()
-        self.tracking_base_to_marker_samples = list()
+        self.subscribed_parent_to_child_samples = list()
 
         self.get_logger().info("Hand-Eye Calibration Node initialized — purely reading TFs, not publishing anything")
 
     def capture_point_service_callback(self, request, response):
-        robot_base_to_effector, tracking_base_to_marker = self.retrieve_transforms()
+        robot_base_to_effector, subscribed_parent_to_child = self.retrieve_transforms()
         self.get_logger().info("robot: " + tf_to_string(robot_base_to_effector))
-        self.get_logger().info("tracking: " + tf_to_string(tracking_base_to_marker))
+        self.get_logger().info("subscribed tf: " + tf_to_string(subscribed_parent_to_child))
         self.robot_base_to_effector_samples.append(robot_base_to_effector)
-        self.tracking_base_to_marker_samples.append(tracking_base_to_marker)
+        self.subscribed_parent_to_child_samples.append(subscribed_parent_to_child)
         cal = self.calibrate()
 
         save_message = ""
@@ -99,14 +95,14 @@ class CameraExtrinsicsCalibration(Node):
             robot_base_to_effector = self.tf_buffer.lookup_transform(
                 self.robot_base_frame, self.robot_effector_frame, Time()
             )
-            tracking_base_to_marker = self.tf_buffer.lookup_transform(
-                self.tracking_base_frame, self.tracking_marker_frame, Time()
+            subscribed_parent_to_child = self.tf_buffer.lookup_transform(
+                self.subscribed_tf_parent_frame, self.subscribed_tf_child_frame, Time()
             )
         except TransformException as ex:
             self.get_logger().error("Could not get transforms")
             self.get_logger().error(str(ex))
             exit(1)
-        return robot_base_to_effector.transform, tracking_base_to_marker.transform
+        return robot_base_to_effector.transform, subscribed_parent_to_child.transform
 
     def calibrate(self) -> Transform | None:
         if len(self.robot_base_to_effector_samples) < 4:
@@ -114,30 +110,23 @@ class CameraExtrinsicsCalibration(Node):
         self.get_logger().info("Estimating calibration...")
         if self.calibration_type == CalibrationType.EYE_IN_HAND:
             return CalibrationBackend.calibrate_eye_in_hand(
-                self.robot_base_to_effector_samples, self.tracking_base_to_marker_samples
+                self.robot_base_to_effector_samples, self.subscribed_parent_to_child_samples
             )
         if self.calibration_type == CalibrationType.EYE_ON_BASE:
             return CalibrationBackend.calibrate_eye_on_base(
-                self.robot_base_to_effector_samples, self.tracking_base_to_marker_samples
+                self.robot_base_to_effector_samples, self.subscribed_parent_to_child_samples
             )
         return None
 
     def resolve_transform_mapping(self) -> tuple[str, str, str] | None:
-        key = self.calibration_transform_key.strip()
-        parent = self.calibration_parent_frame.strip()
-        child = self.calibration_child_frame.strip()
-
-        if key and parent and child:
-            return key, parent, child
-
-        if self.tracking_base_frame == "camera_robot":
-            return "camera_robot", "fr3_link8", "camera_robot"
-        if self.tracking_base_frame == "camera_top":
-            return "camera_fixed", "base", "camera_top"
+        if self.calibration_type == CalibrationType.EYE_IN_HAND:
+            return self.subscribed_tf_parent_frame, self.robot_effector_frame, self.subscribed_tf_parent_frame
+        if self.calibration_type == CalibrationType.EYE_ON_BASE:
+            return self.subscribed_tf_parent_frame, self.robot_base_frame, self.subscribed_tf_parent_frame
         return None
 
     def resolve_calibration_file(self) -> Path:
-        configured_path = self.camera_calibration_file.strip()
+        configured_path = self.calibrated_camera_transforms_filepath.strip()
         if configured_path:
             return Path(configured_path).expanduser().resolve()
 
@@ -182,6 +171,11 @@ class CameraExtrinsicsCalibration(Node):
                 break
 
         static_transforms = calibration_data.setdefault("static_transforms", {})
+        if transform_key not in static_transforms:
+            for existing_key, existing_entry in list(static_transforms.items()):
+                if existing_entry.get("child_frame") == child_frame:
+                    static_transforms[transform_key] = static_transforms.pop(existing_key)
+                    break
         transform_entry = static_transforms.setdefault(transform_key, {})
 
         translation, rotation = tf_to_pos_quat(calibration_transform)
@@ -217,12 +211,12 @@ class CameraExtrinsicsCalibration(Node):
         calibration_message = ""
         if self.calibration_type == CalibrationType.EYE_IN_HAND:
             calibration_message = (
-                f"Eye-in-Hand result — {self.robot_effector_frame} -> {self.tracking_base_frame}:\n"
+                f"Eye-in-Hand result — {self.robot_effector_frame} -> {self.subscribed_tf_parent_frame}:\n"
                 f"{tf_to_string(cal)}\n"
             )
         elif self.calibration_type == CalibrationType.EYE_ON_BASE:
             calibration_message = (
-                f"Eye-on-Base result — {self.robot_base_frame} -> {self.tracking_base_frame}:\n{tf_to_string(cal)}\n"
+                f"Eye-on-Base result — {self.robot_base_frame} -> {self.subscribed_tf_parent_frame}:\n{tf_to_string(cal)}\n"
             )
         else:
             calibration_message = "Calibration complete."

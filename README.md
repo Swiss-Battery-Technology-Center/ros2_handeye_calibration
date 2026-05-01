@@ -7,15 +7,15 @@ This is a minimal ROS2 port of the functionality in the easy_handeye calibration
 ros2 launch hand_eye_calibration calibration.launch.py
 ```
 Launch file arguments:
-- **tracking_base_frame**: optical origin TF frame name
-- **tracking_marker_frame**: marker TF frame name
+- **subscribed_tf_parent_frame**: optical origin TF frame name
+- **subscribed_tf_child_frame**: marker TF frame name
 - **robot_base_frame**: robot base TF frame name
-- **robot_effector_frame**: end-effector TF frame name (or any frame ridigly connected to the tracking_marker_frame)
+- **robot_effector_frame**: end-effector TF frame name (or any frame ridigly connected to the subscribed_tf_child_frame)
 - **calibration_type**: either `eye-on-base` or `eye-in-hand` (see below)
 
 
 **Required components**   
-This node assumes that the TF between the `robot_base_frame` and the `robot_effector_frame` and the TF between the `tracking_base_frame` and `tracking_marker_frame` are being published. For AprilTag markers, the latter TF can be obtained for example by using a ros Apriltag detector node (e.g. [here](https://github.com/wep21/apriltag_ros/tree/ros2-port) or [here](https://github.com/christianrauch/apriltag_ros)). If the TFs are not available, the node will crash when you attempt to take a sample.
+This node assumes that the TF between the `robot_base_frame` and the `robot_effector_frame` and the TF between the `subscribed_tf_parent_frame` and `subscribed_tf_child_frame` are being published. For AprilTag markers, the latter TF can be obtained for example by using a ros Apriltag detector node (e.g. [here](https://github.com/wep21/apriltag_ros/tree/ros2-port) or [here](https://github.com/christianrauch/apriltag_ros)). If the TFs are not available, the node will crash when you attempt to take a sample.
 
 
 **Taking samples**
