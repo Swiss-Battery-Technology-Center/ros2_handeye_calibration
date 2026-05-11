@@ -4,7 +4,6 @@ Collect poses and perform calibration
 """
 
 import enum
-import shutil
 from contextlib import suppress
 from pathlib import Path
 
@@ -133,16 +132,68 @@ class CameraExtrinsicsCalibration(Node):
         if get_package_share_directory is not None:
             try:
                 return (
-                    Path(get_package_share_directory("sbtc_cv")) / "config" / "calibrated_camera_transforms.yaml"
+                    Path(get_package_share_directory("computer_vision")) / "config" / "calibrated_camera_transforms.yaml"
                 ).resolve()
             except Exception:
                 pass
 
-        fallback_source_path = Path("/workspace/ros2/src/sbtc-ros2-cv/sbtc_cv/config/calibrated_camera_transforms.yaml")
+        fallback_source_path = Path(
+            "/workspace/ros2/src/sbtc-ros2-cv/computer_vision/config/calibrated_camera_transforms.yaml"
+        )
         if fallback_source_path.exists():
             return fallback_source_path.resolve()
 
         return (Path.cwd() / "calibrated_camera_transforms.yaml").resolve()
+
+    def calibration_file_targets(self) -> list[Path]:
+        configured_path = self.calibrated_camera_transforms_filepath.strip()
+        if configured_path:
+            return [Path(configured_path).expanduser().resolve()]
+
+        targets = [
+            Path("/workspace/ros2/src/sbtc-ros2-cv/computer_vision/config/calibrated_camera_transforms.yaml"),
+            Path("/workspace/ros2/install/computer_vision/share/computer_vision/config/calibrated_camera_transforms.yaml"),
+        ]
+
+        if get_package_share_directory is not None:
+            with suppress(Exception):
+                targets.append(
+                    Path(get_package_share_directory("computer_vision"))
+                    / "config"
+                    / "calibrated_camera_transforms.yaml"
+                )
+
+        unique_targets = []
+        for target in targets:
+            resolved = target.resolve()
+            if resolved not in unique_targets:
+                unique_targets.append(resolved)
+        return unique_targets
+
+    def update_transform_file(
+        self,
+        path: Path,
+        transform_key: str,
+        parent_frame: str,
+        child_frame: str,
+        translation: list[float],
+        rotation: list[float],
+    ) -> None:
+        calibration_data = {}
+        if path.exists():
+            with path.open("r", encoding="utf-8") as calibration_file:
+                calibration_data = yaml.safe_load(calibration_file) or {}
+
+        static_transforms = calibration_data.setdefault("static_transforms", {})
+        transform_entry = static_transforms.setdefault(transform_key, {})
+        transform_entry["translation"] = [f"{value:.4f}" for value in translation]
+        transform_entry["rotation_xyzw"] = [f"{value:.4f}" for value in rotation]
+        transform_entry["parent_frame"] = parent_frame
+        transform_entry["child_frame"] = child_frame
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8") as calibration_file:
+            yaml.safe_dump(calibration_data, calibration_file, sort_keys=False)
 
     def persist_camera_calibration(self, calibration_transform: Transform) -> str:
         mapping = self.resolve_transform_mapping()
@@ -150,56 +201,14 @@ class CameraExtrinsicsCalibration(Node):
             return "Calibration result computed; no camera calibration mapping configured, skipping YAML update."
 
         transform_key, parent_frame, child_frame = mapping
-        output_path = self.resolve_calibration_file().resolve()
-        source_path = Path(
-            "/workspace/ros2/src/sbtc-ros2-cv/sbtc_cv/config/calibrated_camera_transforms.yaml"
-        ).resolve()
-
-        output_paths: list[Path] = []
-        for candidate_path in (output_path, source_path):
-            if candidate_path not in output_paths:
-                output_paths.append(candidate_path)
-
-        for path in output_paths:
-            path.parent.mkdir(parents=True, exist_ok=True)
-
-        calibration_data = {}
-        for path in output_paths:
-            if path.exists():
-                with path.open("r", encoding="utf-8") as calibration_file:
-                    calibration_data = yaml.safe_load(calibration_file) or {}
-                break
-
-        static_transforms = calibration_data.setdefault("static_transforms", {})
-        if transform_key not in static_transforms:
-            for existing_key, existing_entry in list(static_transforms.items()):
-                if existing_entry.get("child_frame") == child_frame:
-                    static_transforms[transform_key] = static_transforms.pop(existing_key)
-                    break
-        transform_entry = static_transforms.setdefault(transform_key, {})
-
         translation, rotation = tf_to_pos_quat(calibration_transform)
-        transform_entry["translation"] = [f"{value:.4f}" for value in translation]
-        transform_entry["rotation_xyzw"] = [f"{value:.4f}" for value in rotation]
-        transform_entry["parent_frame"] = parent_frame
-        transform_entry["child_frame"] = child_frame
 
-        backup_paths = []
+        output_paths = self.calibration_file_targets()
+
         for path in output_paths:
-            if path.exists():
-                backup_path = Path(str(path) + ".old")
-                shutil.copy2(path, backup_path)
-                backup_paths.append(str(backup_path))
-
-            with path.open("w", encoding="utf-8") as calibration_file:
-                yaml.safe_dump(calibration_data, calibration_file, sort_keys=False)
+            self.update_transform_file(path, transform_key, parent_frame, child_frame, translation, rotation)
 
         updated_paths_str = ", ".join(str(path) for path in output_paths)
-        if backup_paths:
-            return (
-                f"Updated {updated_paths_str} -> static_transforms.{transform_key} (backup: {', '.join(backup_paths)})"
-            )
-
         return f"Updated {updated_paths_str} -> static_transforms.{transform_key}"
 
     def generate_response_message(self, cal: Transform | None, save_message: str = "") -> str:
